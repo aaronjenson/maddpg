@@ -1,5 +1,6 @@
 torch==1.11.0
-PettingZoo[mpe]==1.22.3
+#PettingZoo[mpe]==1.22.3 # this version has a bug with mpe environment rendering, fix has been created but not released
+git+https://github.com/Farama-Foundation/PettingZoo@18ee2a7#egg=PettingZoo
 numpy==1.22.3
 matplotlib==3.5.2
 Pillow==9.1.1

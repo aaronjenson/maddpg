@@ -7,18 +7,19 @@ from pettingzoo.mpe import simple_adversary_v2, simple_spread_v2, simple_tag_v2
 
 from MADDPG import MADDPG
 
+ENVIRONMENTS = {
+    'simple_adversary_v2': simple_adversary_v2,
+    'simple_spread_v2': simple_spread_v2,
+    'simple_tag_v2': simple_tag_v2
+}
 
-def get_env(env_name, ep_len=25):
+
+def get_env(env_name, ep_len=25, render_mode="rgb_array"):
     """create environment and get observation and action dimension of each agent in this environment"""
-    new_env = None
-    if env_name == 'simple_adversary_v2':
-        new_env = simple_adversary_v2.parallel_env(max_cycles=ep_len)
-    if env_name == 'simple_spread_v2':
-        new_env = simple_spread_v2.parallel_env(max_cycles=ep_len)
-    if env_name == 'simple_tag_v2':
-        new_env = simple_tag_v2.parallel_env(max_cycles=ep_len)
 
+    new_env = ENVIRONMENTS[env_name].parallel_env(max_cycles=ep_len, render_mode=render_mode)
     new_env.reset()
+
     _dim_info = {}
     for agent_id in new_env.agents:
         _dim_info[agent_id] = []  # [obs_dim, act_dim]
