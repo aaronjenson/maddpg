@@ -12,20 +12,22 @@ class Buffer:
         self.action = np.zeros((capacity, act_dim))
         self.reward = np.zeros(capacity)
         self.next_obs = np.zeros((capacity, obs_dim))
-        self.done = np.zeros(capacity, dtype=bool)
+        self.terminated = np.zeros(capacity, dtype=bool)
+        self.truncated = np.zeros(capacity, dtype=bool)
 
         self._index = 0
         self._size = 0
 
         self.device = device
 
-    def add(self, obs, action, reward, next_obs, done):
+    def add(self, obs, action, reward, next_obs, terminated, truncated):
         """ add an experience to the memory """
         self.obs[self._index] = obs
         self.action[self._index] = action
         self.reward[self._index] = reward
         self.next_obs[self._index] = next_obs
-        self.done[self._index] = done
+        self.terminated[self._index] = terminated
+        self.truncated[self._index] = truncated
 
         self._index = (self._index + 1) % self.capacity
         if self._size < self.capacity:
@@ -37,7 +39,8 @@ class Buffer:
         action = self.action[indices]
         reward = self.reward[indices]
         next_obs = self.next_obs[indices]
-        done = self.done[indices]
+        terminated = self.terminated[indices]
+        truncated = self.truncated[indices]
 
         # NOTE that `obs`, `action`, `next_obs` will be passed to network(nn.Module),
         # so the first dimension should be `batch_size`
@@ -46,9 +49,10 @@ class Buffer:
         reward = torch.from_numpy(reward).float().to(self.device)  # just a tensor with length: batch_size
         # reward = (reward - reward.mean()) / (reward.std() + 1e-7)
         next_obs = torch.from_numpy(next_obs).float().to(self.device)  # Size([batch_size, state_dim])
-        done = torch.from_numpy(done).float().to(self.device)  # just a tensor with length: batch_size
+        terminated = torch.from_numpy(terminated).float().to(self.device)  # just a tensor with length: batch_size
+        truncated = torch.from_numpy(truncated).float().to(self.device)  # just a tensor with length: batch_size
 
-        return obs, action, reward, next_obs, done
+        return obs, action, reward, next_obs, terminated, truncated
 
     def __len__(self):
         return self._size

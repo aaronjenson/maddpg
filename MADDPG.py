@@ -43,7 +43,7 @@ class MADDPG:
         self.res_dir = res_dir  # directory to save the training result
         self.logger = setup_logger(os.path.join(res_dir, 'maddpg.log'))
 
-    def add(self, obs, action, reward, next_obs, done):
+    def add(self, obs, action, reward, next_obs, terminated, truncated):
         # NOTE that the experience is a dict with agent name as its key
         for agent_id in obs.keys():
             o = obs[agent_id]
@@ -54,8 +54,9 @@ class MADDPG:
 
             r = reward[agent_id]
             next_o = next_obs[agent_id]
-            d = done[agent_id]
-            self.buffers[agent_id].add(o, a, r, next_o, d)
+            term = terminated[agent_id]
+            trunc = truncated[agent_id]
+            self.buffers[agent_id].add(o, a, r, next_o, term, trunc)
 
     def sample(self, batch_size):
         """sample experience from all the agents' buffers, and collect data for network input"""
@@ -65,18 +66,19 @@ class MADDPG:
 
         # NOTE that in MADDPG, we need the obs and actions of all agents
         # but only the reward and done of the current agent is needed in the calculation
-        obs, act, reward, next_obs, done, next_act = {}, {}, {}, {}, {}, {}
+        obs, act, reward, next_obs, terminated, truncated, next_act = {}, {}, {}, {}, {}, {}, {}
         for agent_id, buffer in self.buffers.items():
-            o, a, r, n_o, d = buffer.sample(indices)
+            o, a, r, n_o, term, trunc = buffer.sample(indices)
             obs[agent_id] = o
             act[agent_id] = a
             reward[agent_id] = r
             next_obs[agent_id] = n_o
-            done[agent_id] = d
+            terminated[agent_id] = term
+            truncated[agent_id] = trunc
             # calculate next_action using target_network and next_state
             next_act[agent_id] = self.agents[agent_id].target_action(n_o)
 
-        return obs, act, reward, next_obs, done, next_act
+        return obs, act, reward, next_obs, terminated, truncated, next_act
 
     def select_action(self, obs):
         actions = {}
@@ -90,14 +92,15 @@ class MADDPG:
 
     def learn(self, batch_size, gamma):
         for agent_id, agent in self.agents.items():
-            obs, act, reward, next_obs, done, next_act = self.sample(batch_size)
+            obs, act, reward, next_obs, terminated, truncated, next_act = self.sample(batch_size)
             # update critic
             critic_value = agent.critic_value(list(obs.values()), list(act.values()))
 
             # calculate target critic value
             next_target_critic_value = agent.target_critic_value(list(next_obs.values()),
                                                                  list(next_act.values()))
-            target_value = reward[agent_id] + gamma * next_target_critic_value * (1 - done[agent_id])
+            target_value = reward[agent_id] + gamma * next_target_critic_value * \
+                (1 - terminated[agent_id]) * (1 - truncated[agent_id])
 
             critic_loss = F.mse_loss(critic_value, target_value.detach(), reduction='mean')
             agent.update_critic(critic_loss)
