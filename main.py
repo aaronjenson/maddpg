@@ -73,9 +73,9 @@ if __name__ == '__main__':
             else:
                 action = maddpg.select_action(obs)
 
-            next_obs, reward, done, info = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
             # env.render()
-            maddpg.add(obs, action, reward, next_obs, done)
+            maddpg.add(obs, action, reward, next_obs, terminated, truncated)
 
             for agent_id, r in reward.items():  # update reward
                 agent_reward[agent_id] += r
