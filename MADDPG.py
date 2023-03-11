@@ -28,22 +28,32 @@ def setup_logger(filename):
 class MADDPG:
     """A MADDPG(Multi Agent Deep Deterministic Policy Gradient) agent"""
 
-    def __init__(self, dim_info, capacity, batch_size, actor_lr, critic_lr, res_dir):
+    def __init__(self, dim_info, capacity, batch_size, actor_lr, critic_lr, res_dir, offline_data=None, layer_norm=False):
+        self.offline_data = offline_data
         # sum all the dims of each agent to get input dim for critic
         global_obs_act_dim = sum(sum(val) for val in dim_info.values())
         # create Agent(actor-critic) and replay buffer for each agent
         self.agents = {}
         self.buffers = {}
+        self.offline_buffers = {}
         for agent_id, (obs_dim, act_dim) in dim_info.items():
-            self.agents[agent_id] = Agent(obs_dim, act_dim, global_obs_act_dim, actor_lr, critic_lr)
+            self.agents[agent_id] = Agent(obs_dim, act_dim, global_obs_act_dim, actor_lr, critic_lr, critic_layer_norm=layer_norm)
             self.buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, 'cpu')
+            if offline_data is not None:
+                self.offline_buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, 'cpu')
         self.dim_info = dim_info
 
         self.batch_size = batch_size
         self.res_dir = res_dir  # directory to save the training result
         self.logger = setup_logger(os.path.join(res_dir, 'maddpg.log'))
 
-    def add(self, obs, action, reward, next_obs, terminated, truncated):
+        if offline_data is not None:
+            for data in offline_data:
+                obs, action, next_obs, reward, terminations, truncations, info = data
+                self.add(obs, action, reward, next_obs, terminations, truncations, offline=True)
+
+    def add(self, obs, action, reward, next_obs, terminated, truncated, offline=False):
+        buffers = self.offline_buffers if offline else self.buffers
         # NOTE that the experience is a dict with agent name as its key
         for agent_id in obs.keys():
             o = obs[agent_id]
@@ -56,11 +66,20 @@ class MADDPG:
             next_o = next_obs[agent_id]
             term = terminated[agent_id]
             trunc = truncated[agent_id]
-            self.buffers[agent_id].add(o, a, r, next_o, term, trunc)
+            buffers[agent_id].add(o, a, r, next_o, term, trunc)
 
     def sample(self, batch_size):
         """sample experience from all the agents' buffers, and collect data for network input"""
         # get the total num of transitions, these buffers should have same number of transitions
+        offline_indices = None
+        if self.offline_data is not None:
+            batch_size //= 2
+            total_offline = len(self.offline_buffers['agent_0'])
+            if batch_size > total_offline:
+                offline_indices = np.random.choice(total_offline, size=total_offline, replace=False)
+                batch_size = (2 * batch_size) - total_offline
+            else:
+                offline_indices = np.random.choice(total_offline, size=batch_size, replace=False)
         total_num = len(self.buffers['agent_0'])
         indices = np.random.choice(total_num, size=batch_size, replace=False)
 
@@ -77,6 +96,18 @@ class MADDPG:
             truncated[agent_id] = trunc
             # calculate next_action using target_network and next_state
             next_act[agent_id] = self.agents[agent_id].target_action(n_o)
+
+        if self.offline_data is not None:
+            for agent_id, buffer in self.offline_buffers.items():
+                o, a, r, n_o, term, trunc = buffer.sample(offline_indices)
+                obs[agent_id] = torch.cat((obs[agent_id], o))
+                act[agent_id] = torch.cat((act[agent_id], a))
+                reward[agent_id] = torch.cat((reward[agent_id], r))
+                next_obs[agent_id] = torch.cat((next_obs[agent_id], n_o))
+                terminated[agent_id] = torch.cat((terminated[agent_id], term))
+                truncated[agent_id] = torch.cat((truncated[agent_id], trunc))
+                # calculate next_action using target_network and next_state
+                next_act[agent_id] = torch.cat((next_act[agent_id], self.agents[agent_id].target_action(n_o)))
 
         return obs, act, reward, next_obs, terminated, truncated, next_act
 

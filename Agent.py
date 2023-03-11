@@ -10,12 +10,12 @@ from torch.optim import Adam
 class Agent:
     """Agent that can interact with environment from pettingzoo"""
 
-    def __init__(self, obs_dim, act_dim, global_obs_dim, actor_lr, critic_lr):
+    def __init__(self, obs_dim, act_dim, global_obs_dim, actor_lr, critic_lr, critic_layer_norm=False):
         self.actor = MLPNetwork(obs_dim, act_dim)
 
         # critic input all the observations and actions
         # if there are 3 agents for example, the input for critic is (obs1, obs2, obs3, act1, act2, act3)
-        self.critic = MLPNetwork(global_obs_dim, 1)
+        self.critic = MLPNetwork(global_obs_dim, 1, layer_norm=critic_layer_norm)
         self.actor_optimizer = Adam(self.actor.parameters(), lr=actor_lr)
         self.critic_optimizer = Adam(self.critic.parameters(), lr=critic_lr)
         self.target_actor = deepcopy(self.actor)
@@ -74,16 +74,19 @@ class Agent:
 
 
 class MLPNetwork(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim=64, non_linear=nn.ReLU()):
+    def __init__(self, in_dim, out_dim, hidden_dim=64, non_linear=nn.ReLU(), layer_norm=False):
         super(MLPNetwork, self).__init__()
 
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            non_linear,
-            nn.Linear(hidden_dim, hidden_dim),
-            non_linear,
-            nn.Linear(hidden_dim, out_dim),
-        ).apply(self.init)
+        layers = [nn.Linear(in_dim, hidden_dim),
+                  non_linear,
+                  nn.Linear(hidden_dim, hidden_dim),
+                  non_linear,
+                  nn.Linear(hidden_dim, out_dim)]
+        if layer_norm:
+            layers.append(nn.LayerNorm(out_dim))
+            layers.append(non_linear)
+
+        self.net = nn.Sequential(*layers).apply(self.init)
 
     @staticmethod
     def init(m):

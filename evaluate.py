@@ -27,23 +27,17 @@ if __name__ == '__main__':
         os.makedirs(gif_dir)
     gif_num = len([file for file in os.listdir(gif_dir)])  # current number of gif
 
-    data_dir = os.path.join(model_dir, 'data') if args.save_data else ''
-    data_num = 0
-    if args.save_data and not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-        data_num = len([file for file in os.listdir(data_dir)])
-
     env, dim_info = get_env(args.env_name, args.episode_length, render_mode="rgb_array")
     maddpg = MADDPG.load(dim_info, os.path.join(model_dir, 'model.pt'))
 
     agent_num = env.num_agents
     # reward of each episode of each agent
     episode_rewards = {agent: np.zeros(args.episode_num) for agent in env.agents}
+    data_list = []
     for episode in range(args.episode_num):
         states = env.reset()
         agent_reward = {agent: 0 for agent in env.agents}  # agent reward of the current episode
         frame_list = []  # used to save gif
-        data_list = []
         while env.agents:  # interact with the env for an episode
             actions = maddpg.select_action(states)
             next_states, rewards, terminations, truncations, infos = env.step(actions)
@@ -65,9 +59,9 @@ if __name__ == '__main__':
         # save gif
         frame_list[0].save(os.path.join(gif_dir, f'out{gif_num + episode + 1}.gif'),
                            save_all=True, append_images=frame_list[1:], duration=1, loop=0)
-        # save data
-        if args.save_data:
-            torch.save(data_list, os.path.join(data_dir, f'out{data_num + episode + 1}.pt'))
+    # save data
+    if args.save_data:
+        torch.save(data_list, os.path.join(model_dir, 'offline_data.pt'))
 
     # training finishes, plot reward
     fig, ax = plt.subplots()

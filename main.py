@@ -3,6 +3,7 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from pettingzoo.mpe import simple_adversary_v2, simple_spread_v2, simple_tag_v2
 
 from MADDPG import MADDPG
@@ -46,6 +47,9 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=1024, help='batch-size of replay buffer')
     parser.add_argument('--actor_lr', type=float, default=0.01, help='learning rate of actor')
     parser.add_argument('--critic_lr', type=float, default=0.01, help='learning rate of critic')
+    parser.add_argument('-o', '--offline_dir', type=str, default=None,
+                        help='directory of training results with offline data stored')
+    parser.add_argument('-l', '--layer_norm', action='store_true', help='use layer normalization in the critic network')
     args = parser.parse_args()
 
     # create folder to save result
@@ -56,9 +60,18 @@ if __name__ == '__main__':
     result_dir = os.path.join(env_dir, f'{total_files + 1}')
     os.makedirs(result_dir)
 
+    offline_data = None
+    if args.offline_dir is not None:
+        data_path = os.path.join(env_dir, args.offline_dir, 'offline_data.pt')
+        if os.path.exists(data_path):
+            offline_data = torch.load(data_path)
+        else:
+            print(f"couldn't find data at {data_path}")
+            exit(1)
+
     env, dim_info = get_env(args.env_name, args.episode_length)
     maddpg = MADDPG(dim_info, args.buffer_capacity, args.batch_size, args.actor_lr, args.critic_lr,
-                    result_dir)
+                    result_dir, offline_data, layer_norm=args.layer_norm)
 
     step = 0  # global step counter
     agent_num = env.num_agents
