@@ -28,8 +28,12 @@ def setup_logger(filename):
 class MADDPG:
     """A MADDPG(Multi Agent Deep Deterministic Policy Gradient) agent"""
 
-    def __init__(self, dim_info, capacity, batch_size, actor_lr, critic_lr, res_dir, offline_data=None, layer_norm=False):
+    def __init__(self, dim_info, capacity, batch_size, actor_lr, critic_lr, res_dir, offline_data=None, layer_norm=False, num_qs=1, num_min_qs=1):
+        assert num_qs > 0
+        assert num_qs >= num_min_qs
         self.offline_data = offline_data
+        self.num_qs = num_qs
+        self.num_min_qs = num_min_qs
         # sum all the dims of each agent to get input dim for critic
         global_obs_act_dim = sum(sum(val) for val in dim_info.values())
         # create Agent(actor-critic) and replay buffer for each agent
@@ -37,7 +41,7 @@ class MADDPG:
         self.buffers = {}
         self.offline_buffers = {}
         for agent_id, (obs_dim, act_dim) in dim_info.items():
-            self.agents[agent_id] = Agent(obs_dim, act_dim, global_obs_act_dim, actor_lr, critic_lr, critic_layer_norm=layer_norm)
+            self.agents[agent_id] = Agent(obs_dim, act_dim, global_obs_act_dim, actor_lr, critic_lr, critic_layer_norm=layer_norm, redq_n=num_qs, redq_m=num_min_qs)
             self.buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, 'cpu')
             if offline_data is not None:
                 self.offline_buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, 'cpu')
@@ -125,22 +129,26 @@ class MADDPG:
         for agent_id, agent in self.agents.items():
             obs, act, reward, next_obs, terminated, truncated, next_act = self.sample(batch_size)
             # update critic
-            critic_value = agent.critic_value(list(obs.values()), list(act.values()))
+            critic_values = agent.critic_values(list(obs.values()), list(act.values()))
 
             # calculate target critic value
-            next_target_critic_value = agent.target_critic_value(list(next_obs.values()),
+            next_target_critic_values = agent.target_critic_values(list(next_obs.values()),
                                                                  list(next_act.values()))
-            target_value = reward[agent_id] + gamma * next_target_critic_value * \
-                (1 - terminated[agent_id]) * (1 - truncated[agent_id])
+            target_values = [reward[agent_id] + gamma * next_target_critic_value * \
+                (1 - terminated[agent_id]) * (1 - truncated[agent_id]) for next_target_critic_value in next_target_critic_values]
 
-            critic_loss = F.mse_loss(critic_value, target_value.detach(), reduction='mean')
-            agent.update_critic(critic_loss)
+            critic_losses = [F.mse_loss(critic_values[i], target_values[i].detach(), reduction='mean') for i in range(len(critic_values))]
+            agent.update_critics(critic_losses)
+
+            # sample num_min_qs
+            indices = torch.randperm(self.num_qs)[:self.num_min_qs] if self.num_min_qs < self.num_qs else None
 
             # update actor
             # action of the current agent is calculated using its actor
             action, logits = agent.action(obs[agent_id], model_out=True)
             act[agent_id] = action
-            actor_loss = -agent.critic_value(list(obs.values()), list(act.values())).mean()
+            actor_losses = agent.critic_values(list(obs.values()), list(act.values()), indices)
+            actor_loss = min([-loss.mean() for loss in actor_losses])
             actor_loss_pse = torch.pow(logits, 2).mean()
             agent.update_actor(actor_loss + 1e-3 * actor_loss_pse)
             # self.logger.info(f'agent{i}: critic loss: {critic_loss.item()}, actor loss: {actor_loss.item()}')
@@ -153,7 +161,8 @@ class MADDPG:
 
         for agent in self.agents.values():
             soft_update(agent.actor, agent.target_actor)
-            soft_update(agent.critic, agent.target_critic)
+            for i in range(self.num_qs):
+                soft_update(agent.critics[i], agent.target_critics[i])
 
     def save(self, reward):
         """save actor parameters of all agents and training reward to `res_dir`"""

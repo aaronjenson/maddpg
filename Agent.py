@@ -10,16 +10,21 @@ from torch.optim import Adam
 class Agent:
     """Agent that can interact with environment from pettingzoo"""
 
-    def __init__(self, obs_dim, act_dim, global_obs_dim, actor_lr, critic_lr, critic_layer_norm=False):
+    def __init__(self, obs_dim, act_dim, global_obs_dim, actor_lr, critic_lr, critic_layer_norm=False,
+                 redq_n=1, redq_m=1):
+        assert redq_n > 0
+        assert redq_m <= redq_n
+        self.m = redq_m
+        self.n = redq_n
         self.actor = MLPNetwork(obs_dim, act_dim)
 
         # critic input all the observations and actions
         # if there are 3 agents for example, the input for critic is (obs1, obs2, obs3, act1, act2, act3)
-        self.critic = MLPNetwork(global_obs_dim, 1, layer_norm=critic_layer_norm)
+        self.critics = [MLPNetwork(global_obs_dim, 1, layer_norm=critic_layer_norm) for _ in range(self.n)]
         self.actor_optimizer = Adam(self.actor.parameters(), lr=actor_lr)
-        self.critic_optimizer = Adam(self.critic.parameters(), lr=critic_lr)
+        self.critic_optimizers = [Adam(self.critics[i].parameters(), lr=critic_lr) for i in range(self.n)]
         self.target_actor = deepcopy(self.actor)
-        self.target_critic = deepcopy(self.critic)
+        self.target_critics = deepcopy(self.critics)
 
     @staticmethod
     def gumbel_softmax(logits, tau=1.0, eps=1e-20):
@@ -52,13 +57,13 @@ class Agent:
         action = F.gumbel_softmax(logits, hard=True)
         return action.squeeze(0).detach()
 
-    def critic_value(self, state_list: List[Tensor], act_list: List[Tensor]):
+    def critic_values(self, state_list: List[Tensor], act_list: List[Tensor], indices=None):
         x = torch.cat(state_list + act_list, 1)
-        return self.critic(x).squeeze(1)  # tensor with a given length
+        return [critic(x).squeeze(1) for critic in (self.critics if indices is None else (self.critics[i] for i in indices))]
 
-    def target_critic_value(self, state_list: List[Tensor], act_list: List[Tensor]):
+    def target_critic_values(self, state_list: List[Tensor], act_list: List[Tensor]):
         x = torch.cat(state_list + act_list, 1)
-        return self.target_critic(x).squeeze(1)  # tensor with a given length
+        return [target_critic(x).squeeze(1) for target_critic in self.target_critics]  # tensor with a given length
 
     def update_actor(self, loss):
         self.actor_optimizer.zero_grad()
@@ -66,11 +71,15 @@ class Agent:
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
         self.actor_optimizer.step()
 
-    def update_critic(self, loss):
-        self.critic_optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.5)
-        self.critic_optimizer.step()
+    def update_critics(self, losses):
+        for c_opt in self.critic_optimizers:
+            c_opt.zero_grad()
+        for loss in losses:
+            loss.backward()
+        for critic in self.critics:
+            torch.nn.utils.clip_grad_norm_(critic.parameters(), 0.5)
+        for c_opt in self.critic_optimizers:
+            c_opt.step()
 
 
 class MLPNetwork(nn.Module):

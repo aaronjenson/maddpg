@@ -50,6 +50,9 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--offline_dir', type=str, default=None,
                         help='directory of training results with offline data stored')
     parser.add_argument('-l', '--layer_norm', action='store_true', help='use layer normalization in the critic network')
+    parser.add_argument('--num_qs', type=int, default=1, help='size of ensemble of critic networks')
+    parser.add_argument('--num_min_qs', type=int, default=1, help='size of subset of ensembles to consider')
+    parser.add_argument('--utd', type=int, default=1, help='number of updates per data point')
     args = parser.parse_args()
 
     # create folder to save result
@@ -71,7 +74,7 @@ if __name__ == '__main__':
 
     env, dim_info = get_env(args.env_name, args.episode_length)
     maddpg = MADDPG(dim_info, args.buffer_capacity, args.batch_size, args.actor_lr, args.critic_lr,
-                    result_dir, offline_data, layer_norm=args.layer_norm)
+                    result_dir, offline_data, layer_norm=args.layer_norm, num_qs=args.num_qs, num_min_qs=args.num_min_qs)
 
     step = 0  # global step counter
     agent_num = env.num_agents
@@ -94,9 +97,10 @@ if __name__ == '__main__':
             for agent_id, r in reward.items():  # update reward
                 agent_reward[agent_id] += r
 
-            if step >= args.random_steps and step % args.learn_interval == 0:  # learn every few steps
-                maddpg.learn(args.batch_size, args.gamma)
-                maddpg.update_target(args.tau)
+            if step >= args.random_steps:
+                for _ in range(args.utd):
+                    maddpg.learn(args.batch_size, args.gamma)
+                    maddpg.update_target(args.tau)
 
             obs = next_obs
 
