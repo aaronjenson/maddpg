@@ -4,14 +4,15 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from pettingzoo.mpe import simple_adversary_v2, simple_spread_v2, simple_tag_v2
+from pettingzoo.mpe import simple_adversary_v2, simple_spread_v2, simple_tag_v2, simple_world_comm_v2
 
 from MADDPG import MADDPG
 
 ENVIRONMENTS = {
     'simple_adversary_v2': simple_adversary_v2,
     'simple_spread_v2': simple_spread_v2,
-    'simple_tag_v2': simple_tag_v2
+    'simple_tag_v2': simple_tag_v2,
+    'simple_world_comm_v2': simple_world_comm_v2
 }
 
 
@@ -33,7 +34,7 @@ def get_env(env_name, ep_len=25, render_mode="rgb_array"):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('env_name', type=str, default='simple_adversary_v2', help='name of the env',
-                        choices=['simple_adversary_v2', 'simple_spread_v2', 'simple_tag_v2'])
+                        choices=ENVIRONMENTS.keys())
     parser.add_argument('--episode_num', type=int, default=30000,
                         help='total episode num during training procedure')
     parser.add_argument('--episode_length', type=int, default=25, help='steps per episode')
@@ -53,6 +54,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_qs', type=int, default=1, help='size of ensemble of critic networks')
     parser.add_argument('--num_min_qs', type=int, default=1, help='size of subset of ensembles to consider')
     parser.add_argument('--utd', type=int, default=1, help='number of updates per data point')
+    parser.add_argument('--force_cpu', action='store_true', help='forces using cpu instead of gpu for training')
     args = parser.parse_args()
 
     # create folder to save result
@@ -72,9 +74,12 @@ if __name__ == '__main__':
             print(f"couldn't find data at {data_path}")
             exit(1)
 
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.force_cpu else "cpu")
+
     env, dim_info = get_env(args.env_name, args.episode_length)
     maddpg = MADDPG(dim_info, args.buffer_capacity, args.batch_size, args.actor_lr, args.critic_lr,
-                    result_dir, offline_data, layer_norm=args.layer_norm, num_qs=args.num_qs, num_min_qs=args.num_min_qs)
+                    result_dir, device, offline_data, layer_norm=args.layer_norm, num_qs=args.num_qs,
+                    num_min_qs=args.num_min_qs)
 
     step = 0  # global step counter
     agent_num = env.num_agents
@@ -134,8 +139,8 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     x = range(1, args.episode_num + 1)
     for agent_id, reward in episode_rewards.items():
-        ax.plot(x, reward, label=agent_id)
-        ax.plot(x, get_running_reward(reward))
+        # ax.plot(x, reward, label=agent_id)
+        ax.plot(x, get_running_reward(reward), label=agent_id)
     ax.legend()
     ax.set_xlabel('episode')
     ax.set_ylabel('reward')

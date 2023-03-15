@@ -17,6 +17,7 @@ if __name__ == '__main__':
     parser.add_argument('--episode-num', type=int, default=10, help='total episode num during evaluation')
     parser.add_argument('--episode-length', type=int, default=50, help='steps per episode')
     parser.add_argument('-d', '--save-data', action='store_true', help='save data for offline use')
+    parser.add_argument('--force_cpu', action='store_true', help='forces using cpu instead of gpu for training')
 
     args = parser.parse_args()
 
@@ -27,8 +28,9 @@ if __name__ == '__main__':
         os.makedirs(gif_dir)
     gif_num = len([file for file in os.listdir(gif_dir)])  # current number of gif
 
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.force_cpu else "cpu")
     env, dim_info = get_env(args.env_name, args.episode_length, render_mode="rgb_array")
-    maddpg = MADDPG.load(dim_info, os.path.join(model_dir, 'model.pt'))
+    maddpg = MADDPG.load(dim_info, os.path.join(model_dir, 'model.pt'), device)
 
     agent_num = env.num_agents
     # reward of each episode of each agent

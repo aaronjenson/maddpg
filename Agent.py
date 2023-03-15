@@ -10,17 +10,19 @@ from torch.optim import Adam
 class Agent:
     """Agent that can interact with environment from pettingzoo"""
 
-    def __init__(self, obs_dim, act_dim, global_obs_dim, actor_lr, critic_lr, critic_layer_norm=False,
+    def __init__(self, obs_dim, act_dim, global_obs_dim, actor_lr, critic_lr, device, critic_layer_norm=False,
                  redq_n=1, redq_m=1):
         assert redq_n > 0
         assert redq_m <= redq_n
+
+        self.device = device
         self.m = redq_m
         self.n = redq_n
-        self.actor = MLPNetwork(obs_dim, act_dim)
+        self.actor = MLPNetwork(obs_dim, act_dim).to(device)
 
         # critic input all the observations and actions
         # if there are 3 agents for example, the input for critic is (obs1, obs2, obs3, act1, act2, act3)
-        self.critics = [MLPNetwork(global_obs_dim, 1, layer_norm=critic_layer_norm) for _ in range(self.n)]
+        self.critics = [MLPNetwork(global_obs_dim, 1, layer_norm=critic_layer_norm).to(device) for _ in range(self.n)]
         self.actor_optimizer = Adam(self.actor.parameters(), lr=actor_lr)
         self.critic_optimizers = [Adam(self.critics[i].parameters(), lr=critic_lr) for i in range(self.n)]
         self.target_actor = deepcopy(self.actor)
@@ -40,6 +42,7 @@ class Agent:
         # b) calculate action when update actor, where input(obs) is sampled from replay buffer with size:
         # torch.Size([batch_size, state_dim])
 
+        obs = obs.to(self.device)
         logits = self.actor(obs)  # torch.Size([batch_size, action_size])
         # action = self.gumbel_softmax(logits)
         action = F.gumbel_softmax(logits, hard=True)
@@ -92,7 +95,7 @@ class MLPNetwork(nn.Module):
                   non_linear,
                   nn.Linear(hidden_dim, out_dim)]
         if layer_norm:
-            layers.append(nn.LayerNorm(out_dim))
+            layers.append(nn.LayerNorm(out_dim, elementwise_affine=False))
             layers.append(non_linear)
 
         self.net = nn.Sequential(*layers).apply(self.init)

@@ -28,9 +28,11 @@ def setup_logger(filename):
 class MADDPG:
     """A MADDPG(Multi Agent Deep Deterministic Policy Gradient) agent"""
 
-    def __init__(self, dim_info, capacity, batch_size, actor_lr, critic_lr, res_dir, offline_data=None, layer_norm=False, num_qs=1, num_min_qs=1):
+    def __init__(self, dim_info, capacity, batch_size, actor_lr, critic_lr, res_dir, device, offline_data=None, layer_norm=False, num_qs=1, num_min_qs=1):
         assert num_qs > 0
         assert num_qs >= num_min_qs
+
+        self.device = device
         self.offline_data = offline_data
         self.num_qs = num_qs
         self.num_min_qs = num_min_qs
@@ -41,10 +43,11 @@ class MADDPG:
         self.buffers = {}
         self.offline_buffers = {}
         for agent_id, (obs_dim, act_dim) in dim_info.items():
-            self.agents[agent_id] = Agent(obs_dim, act_dim, global_obs_act_dim, actor_lr, critic_lr, critic_layer_norm=layer_norm, redq_n=num_qs, redq_m=num_min_qs)
-            self.buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, 'cpu')
+            self.agents[agent_id] = Agent(obs_dim, act_dim, global_obs_act_dim, actor_lr, critic_lr, self.device,
+                                          critic_layer_norm=layer_norm, redq_n=num_qs, redq_m=num_min_qs)
+            self.buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, self.device)
             if offline_data is not None:
-                self.offline_buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, 'cpu')
+                self.offline_buffers[agent_id] = Buffer(capacity, obs_dim, act_dim, self.device)
         self.dim_info = dim_info
 
         self.batch_size = batch_size
@@ -148,7 +151,7 @@ class MADDPG:
             action, logits = agent.action(obs[agent_id], model_out=True)
             act[agent_id] = action
             actor_losses = agent.critic_values(list(obs.values()), list(act.values()), indices)
-            actor_loss = min([-loss.mean() for loss in actor_losses])
+            actor_loss = max([-loss.mean() for loss in actor_losses])
             actor_loss_pse = torch.pow(logits, 2).mean()
             agent.update_actor(actor_loss + 1e-3 * actor_loss_pse)
             # self.logger.info(f'agent{i}: critic loss: {critic_loss.item()}, actor loss: {actor_loss.item()}')
@@ -174,9 +177,9 @@ class MADDPG:
             pickle.dump({'rewards': reward}, f)
 
     @classmethod
-    def load(cls, dim_info, file):
+    def load(cls, dim_info, file, device='cpu'):
         """init maddpg using the model saved in `file`"""
-        instance = cls(dim_info, 0, 0, 0, 0, os.path.dirname(file))
+        instance = cls(dim_info, 0, 0, 0, 0, os.path.dirname(file), device)
         data = torch.load(file)
         for agent_id, agent in instance.agents.items():
             agent.actor.load_state_dict(data[agent_id])
