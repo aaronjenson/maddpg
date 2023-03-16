@@ -93,7 +93,7 @@ if __name__ == '__main__':
             if step < args.random_steps:
                 action = {agent_id: env.action_space(agent_id).sample() for agent_id in env.agents}
             else:
-                action = maddpg.select_action(obs)
+                action = maddpg.select_action(obs, noise=True)
 
             next_obs, reward, terminated, truncated, info = env.step(action)
             # env.render()

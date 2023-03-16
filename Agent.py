@@ -36,7 +36,7 @@ class Agent:
         logits += -torch.log(-torch.log(epsilon + eps) + eps)
         return F.softmax(logits / tau, dim=-1)
 
-    def action(self, obs, model_out=False):
+    def action(self, obs, model_out=False, noise=False):
         # this method is called in the following two cases:
         # a) interact with the environment
         # b) calculate action when update actor, where input(obs) is sampled from replay buffer with size:
@@ -45,7 +45,7 @@ class Agent:
         obs = obs.to(self.device)
         logits = self.actor(obs)  # torch.Size([batch_size, action_size])
         # action = self.gumbel_softmax(logits)
-        action = F.gumbel_softmax(logits, hard=True)
+        action = F.gumbel_softmax(logits, tau=(0.0 if noise else 1.0), hard=True)
         if model_out:
             return action, logits
         return action

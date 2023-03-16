@@ -118,11 +118,11 @@ class MADDPG:
 
         return obs, act, reward, next_obs, terminated, truncated, next_act
 
-    def select_action(self, obs):
+    def select_action(self, obs, noise=False):
         actions = {}
         for agent, o in obs.items():
             o = torch.from_numpy(o).unsqueeze(0).float()
-            a = self.agents[agent].action(o)  # torch.Size([1, action_size])
+            a = self.agents[agent].action(o, noise=noise)  # torch.Size([1, action_size])
             # NOTE that the output is a tensor, convert it to int before input to the environment
             actions[agent] = a.squeeze(0).argmax().item()
             self.logger.info(f'{agent} action: {actions[agent]}')
