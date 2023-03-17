@@ -1,19 +1,15 @@
-# maddpg with PyTorch and PettingZoo
+# maddpg with prior data
 
-The original version of [MADDPG](https://arxiv.org/pdf/1706.02275.pdf)
-use environment of  [multiagent-particle-envs](https://github.com/openai/multiagent-particle-envs),
-which has no longer been updated.
-A maintained version of these environments is provided
-by [PettingZoo](https://github.com/Farama-Foundation/PettingZoo).
-So this repository implement MADDPG using PyTorch and PettingZoo
+## Usage
 
-# Usage
-
-training and evaluation is simple and straightforward, take `simple_tag` for example:
+training is done by running `main.py` and testing is done by `evaluation.py`. Below is a basic example of training
+using each of the techniques from RLPD combined with MADDPG.
 
 ```shell
-python main.py simple_tag_v2  # training
-python evaluate.py simple_tag_v2 1  # evaluate result saved in folder 1
+python main.py simple_tag_v2 --episode_num 5000 # train a simple version to get offline data
+python evaluate.py simple_tag_v2 1 -d  # evaluate result saved in folder 1 and save data for offline use
+python main.py simple_tag_v2 --episode_num 5000 -o 1 -l --num_qs 5 --num_min_qs 2 --utd 20  # train with offline data
+python evaluate.py simple_tag_v2 2  # evaluate result from advanced training
 ```
 
 more details about arguments can be found in `main.py`, `evaluate.py`
@@ -21,13 +17,11 @@ or simply run `python main.py --help`, `python evaluate.py --help`
 
 # Result
 
-|  environment name   | training result                                      | evaluation result                                    |
-|  ----  |------------------------------------------------------|------------------------------------------------------|
-| simple_adversary  | ![simple_adversary](archive/simple_adversary_v2.png) | ![simple_adversary](archive/simple_adversary_v2.gif) | 
-| simple_tag  | ![simple_tag](archive/simple_tag_v2.png)             | ![simple_tag](archive/simple_tag_v2.gif)             | 
+| training style                                       | training result                                                  | evaluation result                                                |
+|------------------------------------------------------|------------------------------------------------------------------|------------------------------------------------------------------|
+| simple_world_comm, no improvements, 5000 steps       | ![simple_world_comm](archive/simple_world_comm_v2.png)           | ![simple_world_comm](archive/simple_world_comm_v2.gif)           | 
+| simple_world_comm, offline data and redq, 5000 steps | ![simple_world_comm_rlpd](archive/simple_world_comm_v2_rlpd.png) | ![simple_world_comm_rlpd](archive/simple_world_comm_v2_rlpd.gif) | 
 
-# reference
+# Paper
 
-- implementation of [openai](https://github.com/openai/maddpg)
-- implementation of [shariqiqbal2810](https://github.com/openai/maddpg)
-- [maddpg-mpe-pytorch](https://github.com/Git-123-Hub/maddpg-mpe-pytorch)
+read more details about this experiment at the paper located in the root of this repo, [`maddpg_prior_data.pdf`](maddpg_prior_data.pdf).
